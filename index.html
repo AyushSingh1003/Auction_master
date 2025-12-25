@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Badminton Auction Master</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="brand">Auction Master</div>
+      <div class="header-actions">
+        <button class="tab-btn" data-tab="setup">Setup</button>
+        <button class="tab-btn" data-tab="auctioneer">Auctioneer</button>
+        <button class="tab-btn" data-tab="teams">Team Dashboard</button>
+        <button class="tab-btn" data-tab="pools">Pool Tracker</button>
+        <button class="tab-btn" data-tab="summary">Summary</button>
+      </div>
+    </header>
+
+    <section class="topbar">
+      <div class="controls">
+        <label>
+          Last player rule:
+          <select id="lastPlayerRule">
+            <option value="15L">Min bid ₹15,00,000</option>
+            <option value="fixed">Fixed price</option>
+          </select>
+        </label>
+        <label id="fixedPriceWrap" class="hidden">
+          Fixed price:
+          <input id="fixedPriceInput" type="text" value="15,00,000" placeholder="e.g., 15,00,000 or 15 lakh">
+          <div id="fixedPriceHint" class="note"></div>
+        </label>
+        <button id="resetStateBtn">Reset Auction</button>
+      </div>
+      <div class="budgets" id="budgetsStrip"></div>
+    </section>
+
+    <main>
+      <section id="setup" class="tab">
+        <h2>Tournament Setup</h2>
+        <div class="setup-grid">
+          <div class="setup-card">
+            <h3>Assign Female Captains</h3>
+            <p>Assign captain name and pool for each team. Pairing rule: Pools 1↔4, 2↔3.</p>
+            <div id="captainsForm"></div>
+            <button id="saveCaptainsBtn">Save Captains</button>
+          </div>
+          <div class="setup-card">
+            <h3>Teams</h3>
+            <div id="teamsConfig"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="auctioneer" class="tab hidden">
+        <h2>Auctioneer</h2>
+        <div class="auction-grid">
+          <div class="auction-panel">
+            <div class="field">
+              <label>Player type</label>
+              <select id="playerType">
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Pool</label>
+              <select id="poolSelect"></select>
+            </div>
+            <div class="field">
+              <label>Player</label>
+              <select id="playerSelect"></select>
+            </div>
+            <div class="field">
+              <label>Sold price</label>
+              <input id="soldPrice" type="text" value="5,00,000" placeholder="e.g., 5,00,000 or 5 lakh">
+              <div id="soldPriceHint" class="note"></div>
+            </div>
+            <div class="field">
+              <label>Winning team</label>
+              <select id="teamSelect"></select>
+            </div>
+            <button id="confirmSaleBtn">Confirm Sale</button>
+            <div id="eligibilityNote" class="note"></div>
+          </div>
+          <div class="auction-eligibility">
+            <h3>Eligible Teams</h3>
+            <div id="eligibleTeamsList"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="teams" class="tab hidden">
+        <h2>Team Dashboard</h2>
+        <div id="teamsGrid" class="teams-grid"></div>
+      </section>
+
+      <section id="pools" class="tab hidden">
+        <h2>Pool Tracker</h2>
+        <div class="pool-tabs">
+          <button class="subtab-btn active" data-subtab="male">Male Pools</button>
+          <button class="subtab-btn" data-subtab="female">Female Pools</button>
+        </div>
+        <div id="malePoolsGrid" class="pools-grid"></div>
+        <div id="femalePoolsGrid" class="pools-grid hidden"></div>
+      </section>
+
+      <section id="summary" class="tab hidden">
+        <h2>Summary</h2>
+        <div class="summary-actions">
+          <button id="exportCsvBtn">Export CSV</button>
+          <button id="printBtn">Print / Save PDF</button>
+        </div>
+        <div id="summaryTable"></div>
+      </section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+<style id="currencyStyles"></style>
+</html>
