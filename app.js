@@ -38,7 +38,48 @@ const soldPrice = document.getElementById('soldPrice')
 const soldPriceHint = document.getElementById('soldPriceHint')
 const teamSelect = document.getElementById('teamSelect')
 const confirmSaleBtn = document.getElementById('confirmSaleBtn')
+const undoBtn = document.getElementById('undoBtn')
 const eligibleTeamsList = document.getElementById('eligibleTeamsList')
+ const errorModal = document.getElementById('errorModal')
+ const modalErrorMessage = document.getElementById('modalErrorMessage')
+ const modalCloseBtn = document.getElementById('modalCloseBtn')
+ const warningModal = document.getElementById('warningModal')
+ const warningMessage = document.getElementById('warningMessage')
+ const warningProceedBtn = document.getElementById('warningProceedBtn')
+ const warningCancelBtn = document.getElementById('warningCancelBtn')
+ let pendingWarningAction = null
+ 
+ function showModal(msg) {
+   modalErrorMessage.textContent = msg
+   errorModal.classList.remove('hidden')
+ }
+modalCloseBtn.addEventListener('click', () => {
+  errorModal.classList.add('hidden')
+})
+ errorModal.addEventListener('click', (e) => {
+   if (e.target === errorModal) errorModal.classList.add('hidden')
+ })
+ function showWarning(msg, onProceed) {
+   warningMessage.textContent = msg
+   pendingWarningAction = onProceed || null
+   warningModal.classList.remove('hidden')
+ }
+ warningProceedBtn.addEventListener('click', () => {
+   warningModal.classList.add('hidden')
+   const fn = pendingWarningAction
+   pendingWarningAction = null
+   if (typeof fn === 'function') fn()
+ })
+ warningCancelBtn.addEventListener('click', () => {
+   warningModal.classList.add('hidden')
+   pendingWarningAction = null
+ })
+ warningModal.addEventListener('click', (e) => {
+   if (e.target === warningModal) {
+     warningModal.classList.add('hidden')
+     pendingWarningAction = null
+   }
+ })
 const eligibilityNote = document.getElementById('eligibilityNote')
 const teamsGrid = document.getElementById('teamsGrid')
 const malePoolsGrid = document.getElementById('malePoolsGrid')
@@ -61,6 +102,20 @@ function initState() {
   }))
   const sold = { male: {}, female: {} }
   return { teams, sold, setting: { lastRule: '15L', fixedPrice: LAST_PRICE } }
+}
+let historyStack = []
+function pushHistory() {
+  historyStack.push(JSON.parse(JSON.stringify(state)))
+  if (historyStack.length > 50) historyStack.shift()
+}
+function undoLastAction() {
+  if (historyStack.length === 0) {
+    alert('Nothing to undo!')
+    return
+  }
+  state = historyStack.pop()
+  saveState()
+  refreshAll()
 }
 function saveState() { localStorage.setItem('auction_master_state', JSON.stringify(state)) }
 function loadState() { try { const s = localStorage.getItem('auction_master_state'); return s ? JSON.parse(s) : null } catch { return null } }
@@ -87,6 +142,170 @@ function parseAmount(v) {
   const num = parseInt(s.replace(/[^\d]/g, ''), 10)
   return isNaN(num) ? 0 : num
 }
+
+function parseSoldPrice(v) {
+  if (typeof v === 'number') return v || 0
+  if (!v) return 0
+  let s = String(v).trim().toLowerCase()
+  
+  // If specific suffixes are present, use standard parsing
+  const hasSuffix = s.includes('lakh') || s.includes('lac') || s.includes('crore') || s.includes('cr') || s.includes('thousand') || /k$/.test(s)
+  if (hasSuffix) {
+    return parseAmount(v)
+  }
+
+  // Remove currency symbols and commas
+  s = s.replace(/₹/g, '').replace(/,/g, '')
+  const n = parseFloat(s)
+  if (isNaN(n)) return 0
+  
+  // Heuristic: If number is small (< 1000), assume user means Lakhs (x100,000).
+  // E.g. "5" -> 5,00,000. "15.5" -> 15,50,000.
+  // If number is large (>= 1000), assume absolute value.
+  // E.g. "500000" -> 5,00,000.
+  if (n < 1000) {
+    return Math.round(n * 100000)
+  }
+  return Math.round(n)
+}
+
+function calculateMinRequiredBudget(team, excludeKind = null, excludePoolIndex = null) {
+  let required = 0
+  // Male pools
+  for (let i = 0; i < 8; i++) {
+    if (!team.malePools[i]) {
+      // If we are currently buying this slot, don't count it as a "future" requirement
+      if (excludeKind === 'male' && excludePoolIndex === i) continue
+      
+      const minCost = minBidFor('male', i)
+      required += minCost
+    }
+  }
+  // Female slot
+  if (!team.female.player) {
+    if (team.captain.pool) {
+      const targetPoolNum = pairMap[team.captain.pool]
+      const targetPoolIdx = targetPoolNum - 1
+      
+      // If we are currently buying this female slot
+      const isBuyingFemale = (excludeKind === 'female' && excludePoolIndex === targetPoolIdx)
+      
+      if (!isBuyingFemale) {
+         const minCost = minBidFor('female', targetPoolIdx)
+         required += minCost
+      }
+    } else {
+       // If captain not assigned, we can't determine pool, but we know min cost is at least 5L.
+       required += BASE_PRICE 
+    }
+  }
+  return required
+}
+
+// AUTO-COMPLETE LOGIC:
+// Check if a team only needs "Last Players" in their remaining pools.
+// If so, we might want to flag them or auto-assign. 
+// However, the prompt says "If a team’s remaining required players are ALL Last players... Then: Each of those players is assigned automatically".
+// This implies an automatic action. We should run this check after every sale.
+
+function checkAndRunAutoCompletion() {
+  let changed = false
+  state.teams.forEach(t => {
+    // 1. Identify remaining needs
+    let needsMale = []
+    for(let i=0; i<8; i++) {
+      if(!t.malePools[i]) needsMale.push(i)
+    }
+    let needsFemale = !t.female.player
+    let femalePoolIdx = -1
+    if (needsFemale && t.captain.pool) {
+      femalePoolIdx = pairMap[t.captain.pool] - 1
+    }
+
+    // 2. Check if ALL remaining needs are "Last Players"
+    // "Last Player" means only 1 player remaining in that pool.
+    
+    let allAreLast = true
+    
+    // Check male pools
+    for (let pIdx of needsMale) {
+      const remainingCount = malePools[pIdx].filter(p => !isSold('male', pIdx, p)).length
+      if (remainingCount > 1) {
+        allAreLast = false
+        break
+      }
+    }
+    
+    // Check female pool if needed
+    if (allAreLast && needsFemale) {
+      if (femalePoolIdx === -1) {
+        // Captain not set? Can't determine. Treat as not ready.
+        allAreLast = false 
+      } else {
+        const remainingCount = femalePools[femalePoolIdx].filter(p => !isSold('female', femalePoolIdx, p)).length
+        if (remainingCount > 1) allAreLast = false
+      }
+    }
+
+    // If a team has no remaining players needed, allAreLast is technically true (empty set), 
+    // but we shouldn't do anything.
+    if ((needsMale.length === 0 && !needsFemale)) allAreLast = false
+
+    // 3. If condition met, execute auto-buys
+    if (allAreLast) {
+      // Execute auto-buys for this team
+      // We need to be careful not to double-process in one pass, but since we modify state, we should probably do one by one or batch.
+      
+      // Process Male
+      needsMale.forEach(pIdx => {
+        const available = malePools[pIdx].filter(p => !isSold('male', pIdx, p))
+        if (available.length === 1) {
+          const player = available[0]
+          const price = LAST_PRICE // 15L
+          
+          // Double check budget (should be guaranteed by safety rules, but good to check)
+          if (t.budget >= price) {
+             t.budget -= price
+             t.spend += price
+             t.roster.push({ kind: 'male', pool: pIdx + 1, name: player, price })
+             t.malePools[pIdx] = player
+             markSold('male', pIdx, player, t.id, price)
+             changed = true
+             // alert(`Auto-assigned ${player} to ${t.name} for ${formatINR(price)} (Last Player Rule)`)
+          }
+        }
+      })
+
+      // Process Female
+      if (needsFemale && femalePoolIdx !== -1) {
+         const available = femalePools[femalePoolIdx].filter(p => !isSold('female', femalePoolIdx, p))
+         if (available.length === 1) {
+           const player = available[0]
+           const price = LAST_PRICE
+           if (t.budget >= price) {
+             t.budget -= price
+             t.spend += price
+             t.roster.push({ kind: 'female', pool: femalePoolIdx + 1, name: player, price })
+             t.female.player = player
+             markSold('female', femalePoolIdx, player, t.id, price)
+             changed = true
+             // alert(`Auto-assigned ${player} to ${t.name} for ${formatINR(price)} (Last Player Rule)`)
+           }
+         }
+      }
+      
+      if (changed) {
+        showModal(`✅ Auto-Completion Triggered\n\nTeam ${t.name} only had "Last Players" remaining.\n\nAll remaining players have been automatically assigned at ₹15L each.`)
+      }
+    }
+  })
+  
+  if (changed) {
+    saveState()
+    refreshAll()
+  }
+}
+
 function indianNumber(n) { return INN.format(n) }
 function lakhWord(n) {
   if (n >= 10000000) {
@@ -210,6 +429,7 @@ function renderTeamsConfig() {
   })
 }
 saveCaptainsBtn.addEventListener('click', () => {
+  pushHistory()
   const rows = Array.from(captainsForm.children)
   rows.forEach(r => {
     const id = r.dataset.teamId
@@ -254,7 +474,7 @@ function refreshPlayersForSelectedPool() {
     }
   })
   const minBid = minBidFor(kind, pIdx)
-  const priceVal = parseAmount(soldPrice.value)
+  const priceVal = parseSoldPrice(soldPrice.value)
   soldPriceHint.textContent = formatINR(priceVal) + ' (' + lakhWord(priceVal) + ')'
   renderEligibleTeams()
 }
@@ -262,29 +482,41 @@ playerType.addEventListener('change', refreshAuctionSelectors)
 poolSelect.addEventListener('change', refreshPlayersForSelectedPool)
 playerSelect.addEventListener('change', renderEligibleTeams)
 soldPrice.addEventListener('input', () => {
-  const priceVal = parseAmount(soldPrice.value)
+  const priceVal = parseSoldPrice(soldPrice.value)
   soldPriceHint.textContent = formatINR(priceVal) + ' (' + lakhWord(priceVal) + ')'
   renderEligibleTeams()
 })
 function canTeamBuy(kind, poolIndex, player, team, price) {
   if (price > team.budget) return { ok: false, reason: 'Insufficient budget' }
-  if (team.roster.length >= 10) return { ok: false, reason: 'Team size limit' }
+  // Team must buy exactly 9 auction players (excluding captain)
+  if (team.roster.length >= 9) return { ok: false, reason: 'Team completed' }
   if (kind === 'male') {
     if (team.malePools[poolIndex]) return { ok: false, reason: 'Pool already filled' }
-    return { ok: true }
   } else {
     if (!team.captain.pool) return { ok: false, reason: 'Captain not assigned' }
     if (team.female.player) return { ok: false, reason: 'Female slot filled' }
     const pair = pairMap[team.captain.pool]
     if (pair !== poolIndex + 1) return { ok: false, reason: 'Pairing rule' }
-    return { ok: true }
   }
+
+  // HARD BLOCK: absolute minimum required based on pools (5L or 15L per pool)
+  const minRequiredForOthers = calculateMinRequiredBudget(team, kind, poolIndex)
+  const budgetAfterBid = team.budget - price
+  if (budgetAfterBid < minRequiredForOthers) {
+    return { 
+      ok: false, 
+      reason: 'Safety Rule Block', 
+      detail: `❌ Bid Not Allowed\n\nThis bid makes it mathematically impossible\nto complete the team, even at minimum prices.` 
+    }
+  }
+
+  return { ok: true }
 }
 function renderEligibleTeams() {
   const kind = playerType.value
   const pIdx = Number(poolSelect.value || 0)
   const player = playerSelect.value
-  const price = parseAmount(soldPrice.value || 0)
+  const price = parseSoldPrice(soldPrice.value || 0)
   teamSelect.innerHTML = ''
   eligibleTeamsList.innerHTML = ''
   const minBid = minBidFor(kind, pIdx)
@@ -300,8 +532,19 @@ function renderEligibleTeams() {
     const left = document.createElement('div')
     left.textContent = t.name
     const right = document.createElement('div')
-    right.textContent = res.ok ? 'Eligible' : res.reason
-    right.className = res.ok ? 'ok' : 'no'
+    
+    if (res.ok) {
+      right.textContent = 'Eligible'
+      right.className = 'ok'
+    } else {
+      if (res.reason === 'Safety Rule Block' || res.reason === 'Fairness Rule Block') {
+         right.textContent = 'Blocked: ' + res.detail
+      } else {
+         right.textContent = res.reason
+      }
+      right.className = 'no'
+    }
+    
     row.appendChild(left); row.appendChild(right)
     eligibleTeamsList.appendChild(row)
   })
@@ -312,29 +555,53 @@ function renderEligibleTeams() {
 teamSelect.addEventListener('change', () => {
   confirmSaleBtn.disabled = !Array.from(teamSelect.options).some(o => !o.disabled && o.selected)
 })
+undoBtn.addEventListener('click', undoLastAction)
 confirmSaleBtn.addEventListener('click', () => {
   const kind = playerType.value
   const pIdx = Number(poolSelect.value || 0)
   const player = playerSelect.value
-  const price = parseAmount(soldPrice.value || 0)
+  const price = parseSoldPrice(soldPrice.value || 0)
   if (!player) return
   if (isSold(kind, pIdx, player)) return
   const teamId = teamSelect.value
   const team = teamById(teamId)
   const res = canTeamBuy(kind, pIdx, player, team, price)
   const minBid = minBidFor(kind, pIdx)
-  if (!res.ok) return
-  if (price < minBid) return
-  if (price > team.budget) return
-  team.budget -= price
-  team.spend += price
-  team.roster.push({ kind, pool: pIdx + 1, name: player, price })
-  if (kind === 'male') team.malePools[pIdx] = player
-  else team.female.player = player
-  markSold(kind, pIdx, player, team.id, price)
-  saveState()
-  refreshAll()
-  playerSelect.focus()
+  if (!res.ok) {
+    const msg = res.detail ? res.detail : `❌ Bid Not Allowed\n\nReason: ${res.reason}`
+    showModal(msg)
+    return
+  }
+  if (price < minBid) {
+    showModal(`❌ Bid Too Low\n\nMinimum bid for this player is ${formatINR(minBid)}`)
+    return
+  }
+  if (price > team.budget) {
+    showModal(`❌ Insufficient Budget\n\nTeam only has ${formatINR(team.budget)} remaining.`)
+    return
+  }
+  const playersRemaining = 9 - team.roster.length
+  const safeReserve = playersRemaining * LAST_PRICE
+  const safeMaxBid = team.budget - safeReserve
+  const doSale = () => {
+    pushHistory()
+    team.budget -= price
+    team.spend += price
+    team.roster.push({ kind, pool: pIdx + 1, name: player, price })
+    if (kind === 'male') team.malePools[pIdx] = player
+    else team.female.player = player
+    markSold(kind, pIdx, player, team.id, price)
+    checkAndRunAutoCompletion()
+    saveState()
+    refreshAll()
+    playerSelect.focus()
+  }
+  if (price > safeMaxBid) {
+    const warnMsg = `⚠️ High Risk Bid\n\nThis bid exceeds the recommended safe limit.\nTeam completion is possible ONLY if future players are bought at minimum prices.\n\nProceed only if you understand the risk.`
+    showWarning(warnMsg, doSale)
+    return
+  }
+  doSale()
 })
 function renderTeamsGrid() {
   teamsGrid.innerHTML = ''
@@ -349,6 +616,52 @@ function renderTeamsGrid() {
     budget.className = 'budget'
     budget.textContent = formatINR(t.budget)
     header.appendChild(name); header.appendChild(budget)
+    
+    // Safety Stats
+    const stats = document.createElement('div')
+    stats.className = 'team-stats'
+    
+    // Fairness rule: reserve ₹15L for each remaining auction player
+    const remainingCount = 9 - t.roster.length
+    const minReq = remainingCount * LAST_PRICE
+    const maxBid = t.budget - minReq
+    
+    stats.innerHTML = `
+      <div class="stat-row">
+        <span class="stat-label">💰 Remaining Budget:</span>
+        <span class="stat-val">${formatINR(t.budget)}</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Remaining Required Players:</span>
+        <span class="stat-val">${remainingCount}</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">🔒 Reserved (to finish team):</span>
+        <span class="stat-val">${formatINR(minReq)}</span>
+      </div>
+    `
+
+    if (maxBid < 500000) {
+       const disabledBlock = document.createElement('div')
+       disabledBlock.className = 'bidding-disabled'
+       disabledBlock.innerHTML = `🚫 BIDDING DISABLED<small>Only minimum compulsory purchases remain</small>`
+       stats.appendChild(disabledBlock)
+    } else {
+       const maxBlock = document.createElement('div')
+       maxBlock.className = 'max-bid-block'
+       if (maxBid > 2000000) maxBlock.classList.add('safe')
+       else if (maxBid >= 500000) maxBlock.classList.add('warn')
+       else maxBlock.classList.add('danger')
+       
+       maxBlock.innerHTML = `
+         <h5>🔥 MAX BID ALLOWED</h5>
+         <div class="value">${formatINR(maxBid)}</div>
+       `
+       stats.appendChild(maxBlock)
+    }
+    
+    card.appendChild(stats)
+
     const caps = document.createElement('div')
     caps.className = 'chips'
     const capChip = document.createElement('div')
