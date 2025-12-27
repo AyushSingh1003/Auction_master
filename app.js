@@ -7,16 +7,16 @@ const malePools = [
   ["Hardik Thakur","Sonu","Harshad Tandel","Prathamesh Gawli","Keith Alvares","Chinmay Shetye","Guruprasad","Joshua Dsouza"],
   ["Ankit Shah","Rohan Vartak","Daniel Dsouza","Kevin Nauris","Arsalan","Shiven Makwana","Saahil Shirwaikar","Brian Dsouza"],
   ["Amit Rane","Ameet Prabhu","Navneet Kumar","Litty","Ashwin Kumar","Prem Thampy","Yuvraj Patil","Sandeep Chiplunkar"],
-  ["Tushar Otari","Shamindra Randiye","Apurva Kenny","Vedang Mhadgut","Jayesh Sarda","Ankit Bharadia","Bhavin S Mehta","Jeet Singh"],
+  ["Tushar Otari","Shamindra Randive","Apurva Kenny","Vedang Mhadgut","Jayesh Sarda","Ankit Bharadia","Bhavin S Mehta","Jeet Singh"],
   ["Darryl M","Vedant Rao","Vishal Nanil","Rohan Seth","Varad","Sanket Patil","Yajat Makwana","Ravi Machani"],
-  ["Jil","Trevor","Guru Singh","Harshad Gawankar","Dharmesh Thadeshwar","Akshit Mahajan","Suchit","Premsingh Rao"],
-  ["Nirham M","Vedant N","Nishil Mehta","Manoj","Ravi Jain","Harsh","Rishit Agrawal","Vaibhav Dedhia"],
+  ["Jil","Trevor","Ravi Jain","Harshad Gawankar","Dharmesh Thadeshwar","Akshit Mahajan","Suchit","Premsingh Rao"],
+  ["Nirham M","Vedant N","Nishil Mehta","Manoj","Guru Singh","Harsh","Rishit Agrawal","Vaibhav Dedhia"],
   ["Parimal Gala","Jainesh A","Dhruv Daavda","Heet Gandhi","Karan","Vipul Savaliya","Jay Mahetaliya","Chintan Davda"]
 ]
 const femalePools = [
-  ["Prerana","Nidhi","Karen","Nirali"],
-  ["Leena","Karishma","Bhavika","Amruta"],
-  ["Aishwarya","Manju","Disha","Priyanka"],
+  ["Prerana","Nidhi","Disha","Nirali"],
+  ["Leenaa","Karishma","Bhavika","Karen"],
+  ["Aishwarya","Manju","Amruta","Priyanka"],
   ["Aditi","Kavita","Hetal","Neha"]
 ]
 const pairMap = { 1:4, 4:1, 2:3, 3:2 }
